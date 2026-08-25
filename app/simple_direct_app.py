@@ -1,20 +1,12 @@
-"""
-COMPACT Brain Tumor Classification App
-No Empty Spaces - Clean Layout
-"""
+
+import base64
+import os
 
 import streamlit as st
-import torch
-import torch.nn.functional as F
-from PIL import Image
-import numpy as np
-from torchvision import transforms
+import requests
 import plotly.graph_objects as go
-import plotly.express as px
-import cv2
-import time
 
-from direct_model_loader import load_direct_model, ExplainabilityWrapper
+API_BASE_URL = os.environ.get("NEUROSIGHT_API_URL", "http://127.0.0.1:8000/api/v1")
 
 # Page config
 st.set_page_config(
@@ -43,15 +35,24 @@ st.markdown("""
         padding: 15px;
         border-radius: 10px;
         margin: 10px 0;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
         text-align: center;
+        color: white;
     }
+    .diagnosis-box.tier-high { background: linear-gradient(135deg, #1e8e5a 0%, #167a4c 100%); }
+    .diagnosis-box.tier-medium { background: linear-gradient(135deg, #d99a1b 0%, #b97e0f 100%); }
+    .diagnosis-box.tier-low { background: linear-gradient(135deg, #c0392b 0%, #a93226 100%); }
     .stButton button {
         width: 100%;
     }
     [data-testid="column"] {
         gap: 0rem;
+    }
+    .quality-box {
+        border: 1px solid #DCE1E5;
+        border-radius: 8px;
+        padding: 10px 14px;
+        margin-bottom: 10px;
+        font-size: 0.9rem;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -66,26 +67,29 @@ with st.sidebar:
     st.metric("Overall Accuracy", "91.62%")
     st.write("**Class Performance:**")
     st.write("• Glioma: 95% precision")
-    st.write("• Meningioma: 80% precision")  
+    st.write("• Meningioma: 80% precision")
     st.write("• No Tumor: 99% precision")
     st.write("• Pituitary: 94% precision")
     st.markdown("---")
+    st.caption(f"AI backend: {API_BASE_URL}")
     st.info("For educational and research use only.")
 
-# Load model
-@st.cache_resource
-def load_model():
-    return load_direct_model()
 
-def preprocess_image(image):
-    transform = transforms.Compose([
-        transforms.Resize((128, 128)),
-        transforms.ToTensor(),
-        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-    ])
-    if image.mode != 'RGB':
-        image = image.convert('RGB')
-    return transform(image).unsqueeze(0)
+def api_post(endpoint, uploaded_file):
+    """POST the uploaded file to the AI backend. Returns (json, error_message)."""
+    files = {"file": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type or "application/octet-stream")}
+    try:
+        resp = requests.post(f"{API_BASE_URL}{endpoint}", files=files, timeout=30)
+    except requests.exceptions.RequestException:
+        return None, (
+            f"Couldn't reach the AI backend at {API_BASE_URL}. "
+            f"Start it with: `uvicorn api.main:app --host 127.0.0.1 --port 8000`"
+        )
+    if resp.status_code >= 400:
+        detail = resp.json().get("detail", resp.text) if resp.headers.get("content-type", "").startswith("application/json") else resp.text
+        return None, detail
+    return resp.json(), None
+
 
 def create_probability_chart(probabilities, class_names, predicted_class):
     colors = ['#FF6B6B' if i == predicted_class else '#4ECDC4' for i in range(len(class_names))]
@@ -96,7 +100,7 @@ def create_probability_chart(probabilities, class_names, predicted_class):
     fig.update_layout(
         title="Prediction Probabilities",
         xaxis_title="Tumor Types",
-        yaxis_title="Probability", 
+        yaxis_title="Probability",
         yaxis=dict(range=[0, 1]),
         showlegend=False,
         height=300
@@ -125,118 +129,132 @@ def create_confidence_gauge(confidence):
 if 'analysis_complete' not in st.session_state:
     st.session_state.analysis_complete = False
 
-# Main App - No Empty Space
-model = load_model()
+# File Upload Section - Compact
+st.subheader("📤 Upload MRI Scan")
+uploaded_file = st.file_uploader("Choose brain MRI image", type=['jpg', 'jpeg', 'png'], label_visibility="collapsed")
 
-if model:
-    # File Upload Section - Compact
-    st.subheader("📤 Upload MRI Scan")
-    uploaded_file = st.file_uploader("Choose brain MRI image", type=['jpg', 'jpeg', 'png'], label_visibility="collapsed")
-    
-    if uploaded_file:
-        col1, col2 = st.columns([1, 1])
-        
-        with col1:
-            image = Image.open(uploaded_file)
-            st.image(image, use_column_width=True)
-            
-        with col2:
-            if st.button("🚀 Start AI Analysis", type="primary", use_container_width=True):
-                with st.spinner("AI analyzing MRI scan..."):
-                    try:
-                        input_tensor = preprocess_image(image)
-                        class_names = ['Glioma Tumor', 'Meningioma Tumor', 'No Tumor', 'Pituitary Tumor']
-                        explainer = ExplainabilityWrapper(model, class_names)
-                        result = explainer.predict_with_explanations(input_tensor)
-                        confidence_info = explainer.analyze_confidence(result['probabilities'])
-                        
-                        overlay = None
-                        if result['attention_map'] is not None:
-                            overlay = explainer.create_attention_overlay(image, result['attention_map'])
-                        
-                        st.session_state.result = result
-                        st.session_state.confidence_info = confidence_info
-                        st.session_state.overlay = overlay
-                        st.session_state.class_names = class_names
-                        st.session_state.analysis_complete = True
-                        
-                    except Exception as e:
-                        st.error(f"Analysis error: {e}")
-        
-        # Results Display - Compact
-        if st.session_state.analysis_complete:
-            result = st.session_state.result
-            class_names = st.session_state.class_names
-            confidence_info = st.session_state.confidence_info
-            
-            # Diagnosis Box
-            predicted_name = class_names[result['predicted_class']]
-            confidence = result['confidence']
-            
-            confidence_color = "🟢" if confidence > 0.8 else "🟡" if confidence > 0.6 else "🔴"
-            
-            st.markdown(f"""
-            <div class="diagnosis-box">
-                <h2>AI Diagnosis: {predicted_name}</h2>
-                <h3>{confidence_color} Confidence: {confidence:.2%}</h3>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            # Results in Tabs - No Empty Space
-            tab1, tab2, tab3 = st.tabs(["📊 Probabilities", "🔍 Confidence", "🎯 Attention"])
-            
-            with tab1:
-                fig_prob = create_probability_chart(result['probabilities'], class_names, result['predicted_class'])
-                st.plotly_chart(fig_prob, use_container_width=True)
-                
-            with tab2:
-                col_conf1, col_conf2 = st.columns(2)
-                with col_conf1:
-                    fig_gauge = create_confidence_gauge(confidence)
-                    st.plotly_chart(fig_gauge, use_container_width=True)
-                with col_conf2:
-                    st.metric("Prediction Entropy", f"{confidence_info['entropy']:.3f}")
-                    st.metric("Confidence Gap", f"{confidence_info['confidence_gap']:.3f}")
-                    st.metric("Uncertainty", "High" if confidence_info['uncertainty'] else "Low")
-            
-            with tab3:
-                if st.session_state.overlay is not None:
-                    st.image(st.session_state.overlay, use_column_width=True)
-                    st.caption("🔴 Red: High attention | 🟡 Yellow: Medium | 🔵 Blue: Low")
+if uploaded_file:
+    quality, error = api_post("/validate-image", uploaded_file)
+    if error:
+        st.error(f"❌ {error}")
+        st.stop()
+
+    st.markdown(
+        f"""
+        <div class="quality-box">
+            <b>MRI Quality Assessment</b> — {quality['status']} ({quality['overall_score']:.0f}/100)<br>
+            Resolution: {'Good' if quality['resolution_ok'] else 'Low'} ({quality['width']}×{quality['height']})
+            &nbsp;·&nbsp; Sharpness: {quality['sharpness_score']:.0f}/100
+            &nbsp;·&nbsp; Contrast: {quality['contrast_score']:.0f}/100
+            &nbsp;·&nbsp; Brightness: {quality['brightness']:.0f}/255
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    if quality["status"] == "Poor":
+        st.warning(
+            "⚠️ This image scores low on resolution/sharpness/contrast/brightness. "
+            "Analysis will still run, but treat the result with extra caution."
+        )
+
+    col1, col2 = st.columns([1, 1])
+
+    with col1:
+        st.image(uploaded_file, use_container_width=True)
+
+    with col2:
+        if st.button("🚀 Start AI Analysis", type="primary", use_container_width=True):
+            with st.spinner("AI analyzing MRI scan..."):
+                analysis, error = api_post("/analyze", uploaded_file)
+                if error:
+                    st.error(f"Analysis error: {error}")
                 else:
-                    st.info("Attention visualization not available")
-            
-            # Medical Notes - Compact
-            with st.expander("💡 Medical Guidance"):
-                st.write("""
-                **Clinical Recommendations:**
-                • Consult with neurologist for proper diagnosis
-                • Consider additional imaging if recommended
-                • This AI analysis is for educational purposes
-                • Always seek professional medical advice
-                """)
-    
-    else:
-        # Welcome Section - Compact
-        st.info("👆 Upload a brain MRI image above to begin analysis")
-        
-        col_feat1, col_feat2 = st.columns(2)
-        with col_feat1:
-            st.write("**🎯 AI Features:**")
-            st.write("• Grad-CAM Attention Maps")
-            st.write("• Confidence Analysis")
-            st.write("• Probability Distribution")
-            st.write("• Uncertainty Measurement")
-            
-        with col_feat2:
-            st.write("**🚀 Quick Process:**")
-            st.write("1. Upload MRI Image")
-            st.write("2. Click Analyze Button") 
-            st.write("3. View AI Results")
-            st.write("4. Understand Diagnosis")
+                    st.session_state.analysis = analysis
+                    st.session_state.analysis_complete = True
+
+    # Results Display - Compact
+    if st.session_state.analysis_complete:
+        analysis = st.session_state.analysis
+        class_names = list(analysis['probabilities'].keys())
+        probabilities = list(analysis['probabilities'].values())
+        predicted_class = class_names.index(analysis['prediction'])
+        confidence = analysis['confidence']
+        uncertainty = analysis['uncertainty']
+
+        # Diagnosis Box - tiered by the Safety Decision Engine
+        tier = uncertainty['tier']
+        tier_icon = {"High": "🟢", "Medium": "🟡", "Low": "🔴"}[tier]
+        tier_css = {"High": "tier-high", "Medium": "tier-medium", "Low": "tier-low"}[tier]
+
+        extra_line = ""
+        if tier != "High":
+            extra_line = (
+                f"<p style='margin:4px 0 0'>Alternative possibility: "
+                f"{uncertainty['runner_up_class']} ({uncertainty['runner_up_probability']:.1%})</p>"
+            )
+
+        st.markdown(f"""
+        <div class="diagnosis-box {tier_css}">
+            <h2>AI Diagnosis: {analysis['prediction']}</h2>
+            <h3>{tier_icon} Confidence: {confidence:.2%} &nbsp;·&nbsp; Reliability: {uncertainty['reliability_score']:.0f}/100 ({tier})</h3>
+            <p style="margin:4px 0 0">{uncertainty['message']}</p>
+            {extra_line}
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Results in Tabs - No Empty Space
+        tab1, tab2, tab3 = st.tabs(["📊 Probabilities", "🔍 Confidence", "🎯 Attention"])
+
+        with tab1:
+            fig_prob = create_probability_chart(probabilities, class_names, predicted_class)
+            st.plotly_chart(fig_prob, use_container_width=True)
+
+        with tab2:
+            col_conf1, col_conf2 = st.columns(2)
+            with col_conf1:
+                fig_gauge = create_confidence_gauge(confidence)
+                st.plotly_chart(fig_gauge, use_container_width=True)
+            with col_conf2:
+                st.metric("Prediction Entropy", f"{uncertainty['entropy']:.3f}")
+                st.metric("Top-2 Gap", f"{uncertainty['top_two_gap']:.3f}")
+                st.metric("Reliability Tier", tier)
+
+        with tab3:
+            overlay_b64 = analysis.get('attention_overlay_png_b64')
+            if overlay_b64:
+                st.image(base64.b64decode(overlay_b64), use_container_width=True)
+                st.caption("🔴 Red: High attention | 🟡 Yellow: Medium | 🔵 Blue: Low")
+            else:
+                st.info("Attention visualization not available")
+
+        # Medical Notes - Compact
+        with st.expander("💡 Medical Guidance"):
+            st.write("""
+            **Clinical Recommendations:**
+            • Consult with neurologist for proper diagnosis
+            • Consider additional imaging if recommended
+            • This AI analysis is for educational purposes
+            • Always seek professional medical advice
+            """)
 
 else:
-    st.error("❌ Model failed to load. Check model file.")
+    # Welcome Section - Compact
+    st.info("👆 Upload a brain MRI image above to begin analysis")
+
+    col_feat1, col_feat2 = st.columns(2)
+    with col_feat1:
+        st.write("**🎯 AI Features:**")
+        st.write("• Grad-CAM Attention Maps")
+        st.write("• Confidence Analysis")
+        st.write("• Probability Distribution")
+        st.write("• Uncertainty Measurement")
+
+    with col_feat2:
+        st.write("**🚀 Quick Process:**")
+        st.write("1. Upload MRI Image")
+        st.write("2. Click Analyze Button")
+        st.write("3. View AI Results")
+        st.write("4. Understand Diagnosis")
 
 # Minimal Footer
 st.markdown("---")

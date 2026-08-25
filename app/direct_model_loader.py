@@ -11,22 +11,26 @@ from PIL import Image
 from torchvision import transforms
 import os
 import sys
+from pathlib import Path
 
-print("✅ Direct model loader imported!")
+from model_registry import verify_model_integrity
 
-# Add the models directory to path to import your original model
-sys.path.append('../models')
-sys.path.append('.')
+print("[OK] Direct model loader imported!")
+
+# Resolve the project root relative to this file (not the process's CWD), so
+# the app works regardless of the directory Streamlit was launched from.
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
 
 # ===== DIRECT IMPORT OF YOUR ORIGINAL MODEL =====
 try:
     # Try to import your original model directly
     from models.model2 import LiteCNN
     MODEL_IMPORTED = True
-    print("✅ Successfully imported original LiteCNN from model2.py")
+    print("[OK] Successfully imported original LiteCNN from model2.py")
 except ImportError as e:
-    print(f"❌ Could not import original model: {e}")
-    print("🔄 Creating identical model structure...")
+    print(f"[ERROR] Could not import original model: {e}")
+    print("[WARN] Creating identical model structure...")
     MODEL_IMPORTED = False
     
     # Create the exact same model as in model2.py
@@ -101,18 +105,18 @@ class ExplainabilityWrapper:
         if conv_layers:
             # Use the last convolutional layer for Grad-CAM
             last_conv_name, last_conv_layer = conv_layers[-1]
-            print(f"✅ Registered Grad-CAM hook on: {last_conv_name}")
-            
+            print(f"[OK] Registered Grad-CAM hook on: {last_conv_name}")
+
             def forward_hook(module, input, output):
                 self.feature_maps = output
-            
+
             def backward_hook(module, grad_input, grad_output):
                 self.gradients = grad_output[0]
-            
+
             last_conv_layer.register_forward_hook(forward_hook)
             last_conv_layer.register_full_backward_hook(backward_hook)
         else:
-            print("⚠️ No convolutional layers found for Grad-CAM")
+            print("[WARN] No convolutional layers found for Grad-CAM")
     
     def predict_with_explanations(self, input_tensor):
         """Get prediction with Grad-CAM explanations"""
@@ -168,7 +172,7 @@ class ExplainabilityWrapper:
             return cam
             
         except Exception as e:
-            print(f"⚠️ Grad-CAM error: {e}")
+            print(f"[WARN] Grad-CAM error: {e}")
             return self._create_fallback_cam()
     
     def _create_fallback_cam(self):
@@ -222,87 +226,82 @@ class ExplainabilityWrapper:
 # ===== DIRECT MODEL LOADING =====
 def load_direct_model():
     """Load your model directly without architecture changes"""
-    model_paths = [
-        "best_lite_model.pth",
-        "../models/best_lite_model.pth", 
-        "models/best_lite_model.pth",
-        "../best_lite_model.pth"
-    ]
-    
-    model_path = None
-    for path in model_paths:
-        if os.path.exists(path):
-            model_path = path
-            print(f"✅ Model found: {path}")
-            break
-    
-    if not model_path:
-        print("❌ Model file not found")
+    model_path = PROJECT_ROOT / "artifacts" / "model" / "best_lite_model.pth"
+
+    if not model_path.exists():
+        print(f"[ERROR] Model file not found: {model_path}")
         return None
-    
+    print(f"[OK] Model found: {model_path}")
+
+    integrity = verify_model_integrity(model_path)
+    if integrity["ok"]:
+        print(f"[OK] Model integrity verified: {integrity['reason']}")
+    else:
+        print(f"[WARN] Model integrity check failed: {integrity['reason']}")
+
     try:
         # Create model instance
         model = LiteCNN(num_classes=4)
-        
+
         # Load state dict
         state_dict = torch.load(model_path, map_location=torch.device('cpu'))
         model.load_state_dict(state_dict)
         model.eval()
-        
-        print("✅ Model loaded successfully!")
-        print(f"✅ Model architecture: {type(model).__name__}")
-        
+
+        print("[OK] Model loaded successfully!")
+        print(f"[OK] Model architecture: {type(model).__name__}")
+
         return model
-        
+
     except Exception as e:
-        print(f"❌ Error loading model: {e}")
+        print(f"[ERROR] Error loading model: {e}")
         return None
 
 # ===== TEST FUNCTION =====
 def test_direct_model():
     """Test the direct model loading"""
-    print("\n🧠 Testing Direct Model Loading...")
-    
+    print("\nTesting Direct Model Loading...")
+
     model = load_direct_model()
     if not model:
         return None, None
-    
+
     # Test prediction
     try:
         dummy_input = torch.randn(1, 3, 128, 128)
         with torch.no_grad():
             output = model(dummy_input)
             probabilities = F.softmax(output, dim=1).numpy()[0]
-        
-        print(f"✅ Model works! Output shape: {output.shape}")
-        print(f"✅ Sample probabilities: {probabilities}")
-        
+
+        print(f"[OK] Model works! Output shape: {output.shape}")
+        print(f"[OK] Sample probabilities: {probabilities}")
+
         # Create explainability wrapper
         explainer = ExplainabilityWrapper(
-            model, 
+            model,
             ['Glioma Tumor', 'Meningioma Tumor', 'No Tumor', 'Pituitary Tumor']
         )
-        
+
         # Test explainability
         result = explainer.predict_with_explanations(dummy_input)
-        print(f"✅ Explainability works! CAM: {result['attention_map'] is not None}")
-        
+        print(f"[OK] Explainability works! CAM: {result['attention_map'] is not None}")
+
         return model, explainer
-        
+
     except Exception as e:
-        print(f"❌ Error during testing: {e}")
+        print(f"[ERROR] Error during testing: {e}")
         return None, None
 
 # Run test
 if __name__ == "__main__":
     print("="*60)
-    print("🧠 DIRECT MODEL LOADING TEST")
+    print("DIRECT MODEL LOADING TEST")
     print("="*60)
-    
+
     model, explainer = test_direct_model()
-    
+
     if model and explainer:
-        print("\n🎯 SUCCESS! Direct model loading is working!")
-        print("🚀 Ready for Streamlit integration!")
+        print("\n[SUCCESS] Direct model loading is working!")
+        print("Ready for Streamlit integration!")
     else:
-        print("\n❌ Test failed")
+        print("\n[FAILED] Test failed")

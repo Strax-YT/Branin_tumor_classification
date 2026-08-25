@@ -1,0 +1,12 @@
+{
+  "model_name": "LiteCNN",
+  "model_version": "1.0.0",
+  "parameters": 422788,
+  "size_bytes": 1706227,
+  "input_size": [128, 128],
+  "classes": ["Glioma Tumor", "Meningioma Tumor", "No Tumor", "Pituitary Tumor"],
+  "test_accuracy": 0.9162,
+  "checkpoint_format": "state_dict",
+  "preprocessing": "resize128 + ImageNet normalization",
+  "sha256": "52cac90246ce36f823bb826c8ed60ae1028239bcaa98c1ee03e0f0799458456f"
+}

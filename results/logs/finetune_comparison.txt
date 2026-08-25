@@ -1,0 +1,26 @@
+Fine-tune experiment: 10 epochs, stratified 2000-images/class subsample of data/train,
+starting from best_lite_model.pth, selected by best validation accuracy (data/val).
+See finetune_log.txt for the per-epoch training log.
+
+Validation accuracy (data/val, 100 images/class, used to pick the "best" epoch):
+  Baseline:   91.00%
+  Fine-tuned: 92.25%  (epoch 9)
+
+Test accuracy (data/test, 1098 images, NEVER used during fine-tuning):
+  Baseline:   91.62%
+  Fine-tuned: 90.98%
+
+Per-class test precision/recall/f1:
+                    Baseline (P/R/F1)         Fine-tuned (P/R/F1)
+  Glioma Tumor      0.951 / 0.892 / 0.921     0.88  / 0.92  / 0.90
+  Meningioma Tumor  0.803 / 0.907 / 0.852     0.85  / 0.82  / 0.84
+  No Tumor          0.992 / 0.956 / 0.974     1.00  / 0.93  / 0.96
+  Pituitary Tumor   0.936 / 0.912 / 0.924     0.92  / 0.97  / 0.94
+
+Verdict: NOT PROMOTED. The fine-tune improved on the 400-image validation set but
+regressed on the 1098-image test set -- classic overfitting to a small validation
+split, not a genuine improvement. Meningioma precision did improve (0.80 -> 0.85,
+the original target), but at the cost of its recall (0.91 -> 0.82) and a drop in
+glioma precision (0.95 -> 0.88), for a net accuracy loss. best_lite_model.pth
+remains the deployed model; finetuned_lite_model.pth is kept only as a record of
+this experiment.
