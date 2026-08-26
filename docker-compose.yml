@@ -1,0 +1,25 @@
+services:
+  ai-service:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - neurosight-db:/data
+    environment:
+      - NEUROSIGHT_DB_PATH=/data/neurosight.db
+
+  frontend:
+    build:
+      context: .
+      dockerfile: app/Dockerfile
+    ports:
+      - "8501:8501"
+    environment:
+      - NEUROSIGHT_API_URL=http://ai-service:8000/api/v1
+    depends_on:
+      - ai-service
+
+volumes:
+  neurosight-db:

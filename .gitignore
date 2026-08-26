@@ -1,1 +1,6 @@
 data
+neurosight.db
+__pycache__/
+*.pyc
+mlruns/
+mlartifacts/

@@ -58,7 +58,24 @@ class HealthResponse(BaseModel):
 class MetricsResponse(BaseModel):
     total_predictions: int
     average_inference_time_ms: float
+    average_confidence: float
     class_distribution: dict[str, int]
     review_recommended_count: int
     poor_quality_count: int
-    note: str = "In-memory only, resets on restart. Persistent history is a later step."
+
+
+class PredictionRecord(BaseModel):
+    id: int
+    timestamp: str
+    predicted_class: str
+    confidence: float
+    reliability_score: float
+    reliability_tier: str
+    review_recommended: bool
+    inference_time_ms: float
+
+
+class HistoryResponse(BaseModel):
+    items: list[PredictionRecord]
+    limit: int
+    offset: int

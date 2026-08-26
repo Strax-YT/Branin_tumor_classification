@@ -91,6 +91,17 @@ def api_post(endpoint, uploaded_file):
     return resp.json(), None
 
 
+def api_get(endpoint, params=None):
+    """GET from the AI backend. Returns (json, error_message)."""
+    try:
+        resp = requests.get(f"{API_BASE_URL}{endpoint}", params=params, timeout=15)
+    except requests.exceptions.RequestException:
+        return None, f"Couldn't reach the AI backend at {API_BASE_URL}."
+    if resp.status_code >= 400:
+        return None, resp.text
+    return resp.json(), None
+
+
 def create_probability_chart(probabilities, class_names, predicted_class):
     colors = ['#FF6B6B' if i == predicted_class else '#4ECDC4' for i in range(len(class_names))]
     fig = go.Figure(data=[
@@ -128,6 +139,41 @@ def create_confidence_gauge(confidence):
 # Initialize session state
 if 'analysis_complete' not in st.session_state:
     st.session_state.analysis_complete = False
+
+# Prediction History & Metrics - Collapsed by default
+with st.expander("📈 Prediction History & Metrics", expanded=False):
+    metrics, metrics_error = api_get("/metrics")
+    if metrics_error:
+        st.caption(f"Backend unreachable — {metrics_error}")
+    elif metrics["total_predictions"] == 0:
+        st.caption("No predictions recorded yet.")
+    else:
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Total Predictions", metrics["total_predictions"])
+        m2.metric("Avg Inference Time", f"{metrics['average_inference_time_ms']:.0f} ms")
+        m3.metric("Avg Confidence", f"{metrics['average_confidence']:.1%}")
+        review_rate = metrics["review_recommended_count"] / metrics["total_predictions"]
+        m4.metric("Review-Recommended Rate", f"{review_rate:.1%}")
+
+        history, history_error = api_get("/history", params={"limit": 20})
+        if history_error:
+            st.caption(f"Could not load history — {history_error}")
+        elif history["items"]:
+            st.dataframe(
+                [
+                    {
+                        "Timestamp": item["timestamp"],
+                        "Prediction": item["predicted_class"],
+                        "Confidence": f"{item['confidence']:.1%}",
+                        "Reliability": item["reliability_tier"],
+                        "Review advised": "Yes" if item["review_recommended"] else "No",
+                        "Time (ms)": round(item["inference_time_ms"], 1),
+                    }
+                    for item in history["items"]
+                ],
+                use_container_width=True,
+                hide_index=True,
+            )
 
 # File Upload Section - Compact
 st.subheader("📤 Upload MRI Scan")

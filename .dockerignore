@@ -1,0 +1,14 @@
+data/
+results/
+.git/
+.github/
+.claude/
+__pycache__/
+**/__pycache__/
+*.pyc
+neurosight.db
+*.db
+tests/
+.pytest_cache/
+.vscode/
+*.md
