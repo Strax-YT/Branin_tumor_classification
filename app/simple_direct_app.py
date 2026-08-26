@@ -206,7 +206,7 @@ if uploaded_file:
     col1, col2 = st.columns([1, 1])
 
     with col1:
-        st.image(uploaded_file, use_container_width=True)
+        st.image(uploaded_file, use_column_width=True)
 
     with col2:
         if st.button("🚀 Start AI Analysis", type="primary", use_container_width=True):
@@ -268,7 +268,7 @@ if uploaded_file:
         with tab3:
             overlay_b64 = analysis.get('attention_overlay_png_b64')
             if overlay_b64:
-                st.image(base64.b64decode(overlay_b64), use_container_width=True)
+                st.image(base64.b64decode(overlay_b64), use_column_width=True)
                 st.caption("🔴 Red: High attention | 🟡 Yellow: Medium | 🔵 Blue: Low")
             else:
                 st.info("Attention visualization not available")

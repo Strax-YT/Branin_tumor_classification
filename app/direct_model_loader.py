@@ -33,39 +33,36 @@ except ImportError as e:
     print("[WARN] Creating identical model structure...")
     MODEL_IMPORTED = False
     
-    # Create the exact same model as in model2.py
+    # Create the exact same model as in model2.py -- one conv per block
+    # (NOT two; this must match best_lite_model.pth's actual saved shapes).
     class LiteCNN(nn.Module):
         def __init__(self, num_classes=4):
             super(LiteCNN, self).__init__()
             self.features = nn.Sequential(
+                # Block 1: 128 -> 64
                 nn.Conv2d(3, 32, 3, padding=1),
-                nn.BatchNorm2d(32),
-                nn.ReLU(inplace=True),
-                nn.Conv2d(32, 32, 3, padding=1),
                 nn.BatchNorm2d(32),
                 nn.ReLU(inplace=True),
                 nn.MaxPool2d(2),
                 nn.Dropout2d(0.1),
+                # Block 2: 64 -> 32
                 nn.Conv2d(32, 64, 3, padding=1),
-                nn.BatchNorm2d(64),
-                nn.ReLU(inplace=True),
-                nn.Conv2d(64, 64, 3, padding=1),
                 nn.BatchNorm2d(64),
                 nn.ReLU(inplace=True),
                 nn.MaxPool2d(2),
                 nn.Dropout2d(0.2),
+                # Block 3: 32 -> 16
                 nn.Conv2d(64, 128, 3, padding=1),
-                nn.BatchNorm2d(128),
-                nn.ReLU(inplace=True),
-                nn.Conv2d(128, 128, 3, padding=1),
                 nn.BatchNorm2d(128),
                 nn.ReLU(inplace=True),
                 nn.MaxPool2d(2),
                 nn.Dropout2d(0.3),
+                # Block 4: 16 -> 8
                 nn.Conv2d(128, 256, 3, padding=1),
                 nn.BatchNorm2d(256),
                 nn.ReLU(inplace=True),
                 nn.MaxPool2d(2),
+                nn.Dropout2d(0.3),
             )
             self.classifier = nn.Sequential(
                 nn.AdaptiveAvgPool2d((1, 1)),
@@ -75,7 +72,7 @@ except ImportError as e:
                 nn.Dropout(0.5),
                 nn.Linear(128, num_classes)
             )
-        
+
         def forward(self, x):
             x = self.features(x)
             x = self.classifier(x)
